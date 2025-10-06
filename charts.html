@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work Volume Data Visualizer</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1200px; margin: auto; background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        .chart-container { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 40px; 
+            margin-top: 20px;
+        }
+        .chart-box {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        #upload-section { margin-bottom: 30px; }
+        #loading-message { color: #007bff; font-weight: bold; margin-top: 10px; display: none; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h1>📊 Presentation Chart Generator</h1>
+    <div id="upload-section">
+        <p><strong>Step 1:</strong> Please upload your CSV file. Ensure the structure is the same (Work Groups, Jan, Feb, Mar, etc.) and the first row is *not* the header.</p>
+        <input type="file" id="csvFileInput" accept=".csv" onchange="handleFileChange(event)">
+        <div id="loading-message">Processing data and generating charts...</div>
+    </div>
+
+    <div id="chart-output" style="display: none;">
+        <h2>Monthly Work Volume Totals (Jan - Sep)</h2>
+        <div class="chart-box">
+            <canvas id="monthlyTotalsChart"></canvas>
+        </div>
+        
+        <h2>Monthly Work Volume Breakdown by Work Group</h2>
+        <div class="chart-box">
+            <canvas id="stackedBarChart"></canvas>
+        </div>
+    </div>
+    
+    <div id="error-message" style="color: red; display: none; margin-top: 20px;"></div>
+</div>
+
+<script>
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+    let chart1, chart2;
+
+    // Fixed color palette for the stacked chart
+    const COLORS = [
+        '#36A2EB', '#FF6384', '#FF9F40', '#4BC0C0', '#9966FF',
+        '#FFCD56', '#C9CBCF', '#6A89CC', '#E84393', '#1ABC9C'
+    ];
+
+    /**
+     * Reads and processes the uploaded file.
+     */
+    function handleFileChange(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        document.getElementById('chart-output').style.display = 'none';
+        document.getElementById('error-message').style.display = 'none';
+        document.getElementById('loading-message').style.display = 'block';
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // The file has a garbage row ('Table 1...') before the header.
+            const rawText = e.target.result;
+            const lines = rawText.split('\n');
+            // Skip the first line and join the rest back into a string
+            const dataLines = lines.slice(1);
+            const processedCSV = dataLines.join('\n');
+
+            // Use PapaParse to parse the modified CSV string
+            Papa.parse(processedCSV, {
+                header: true,
+                dynamicTyping: true, // Tries to convert values to numbers/booleans
+                skipEmptyLines: true,
+                complete: function(results) {
+                    document.getElementById('loading-message').style.display = 'none';
+                    if (results.errors.length > 0) {
+                        displayError('CSV Parsing Error: ' + results.errors[0].message);
+                        return;
+                    }
+                    createCharts(results.data);
+                },
+                error: function(err) {
+                    document.getElementById('loading-message').style.display = 'none';
+                    displayError('An error occurred during file parsing: ' + err.message);
+                }
+            });
+        };
+
+        reader.readAsText(file);
+    }
+    
+    /**
+     * Clears existing Chart.js instances.
+     */
+    function destroyExistingCharts() {
+        if (chart1) chart1.destroy();
+        if (chart2) chart2.destroy();
+    }
+
+    /**
+     * Prepares data and renders both charts.
+     */
+    function createCharts(data) {
+        destroyExistingCharts();
+
+        const workGroupsData = data.filter(row => row['Work Groups'] && row['Work Groups'] !== 'Grand Total');
+        const grandTotalRow = data.find(row => row['Work Groups'] === 'Grand Total');
+
+        if (!grandTotalRow) {
+            displayError('Could not find the "Grand Total" row in the data. Please check your file format.');
+            return;
+        }
+
+        // --- CHART 1: MONTHLY TOTALS ---
+        const monthlyTotals = MONTHS.map(month => {
+            // Ensure values are treated as numbers, converting null/empty/NaN to 0
+            const value = parseFloat(grandTotalRow[month]);
+            return isNaN(value) ? 0 : value;
+        });
+
+        const ctx1 = document.getElementById('monthlyTotalsChart').getContext('2d');
+        chart1 = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: MONTHS,
+                datasets: [{
+                    label: 'Total Work Count',
+                    data: monthlyTotals,
+                    backgroundColor: [
+                        '#36A2EB', '#FF6384', '#FF9F40', '#4BC0C0', 
+                        '#9966FF', '#FFCD56', '#C9CBCF', '#6A89CC', '#E84393'
+                    ],
+                    borderColor: '#fff',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: true, text: 'Total Work Volume by Month (Jan - Sep)' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Month' } },
+                    y: { title: { display: true, text: 'Total Count' }, beginAtZero: true }
+                }
+            }
+        });
+
+        // --- CHART 2: STACKED BREAKDOWN ---
+        const workGroupNames = workGroupsData.map(row => row['Work Groups']).filter(name => name);
+        
+        const datasets = workGroupNames.map((groupName, index) => {
+            const row = workGroupsData.find(r => r['Work Groups'] === groupName);
+            const dataPoints = MONTHS.map(month => {
+                const value = parseFloat(row[month]);
+                return isNaN(value) ? 0 : value;
+            });
+            return {
+                label: groupName,
+                data: dataPoints,
+                backgroundColor: COLORS[index % COLORS.length]
+            };
+        });
+
+        const ctx2 = document.getElementById('stackedBarChart').getContext('2d');
+        chart2 = new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: MONTHS,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: { display: true, text: 'Monthly Work Volume Breakdown by Work Group' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { stacked: true, title: { display: true, text: 'Month' } },
+                    y: { stacked: true, title: { display: true, text: 'Total Count' }, beginAtZero: true }
+                }
+            }
+        });
+
+        document.getElementById('chart-output').style.display = 'block';
+    }
+
+    function displayError(message) {
+        const errorDiv = document.getElementById('error-message');
+        errorDiv.textContent = 'Error: ' + message;
+        errorDiv.style.display = 'block';
+    }
+</script>
+
+</body>
+</html>
