@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Business Intelligence Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .container { max-width: 1400px; }
+        .chart-grid { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 1.5rem; }
+        @media (min-width: 768px) {
+            .chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1280px) {
+            .chart-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        .chart-box {
+            background: #ffffff;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 2px solid #3b82f6;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+            transition: all 0.3s;
+            background-color: #eff6ff;
+        }
+        input[type="file"]:hover { border-color: #1d4ed8; box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+    </style>
+    <!-- Load Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Load Chart.js Datalabels Plugin for showing numbers on bars -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <!-- Load PapaParse for robust CSV handling -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+
+<div class="container mx-auto p-4 md:p-8">
+    <header class="mb-8">
+        <h1 class="text-4xl font-bold text-indigo-700 border-b-4 border-indigo-200 pb-2">
+            Business Intelligence Presentation Dashboard
+        </h1>
+        <p class="mt-2 text-gray-600">Upload your CSV data file to visualize task trends, performance, and key frequencies.</p>
+    </header>
+
+    <div id="upload-section" class="mb-8 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
+        <p class="text-lg font-semibold text-gray-700 mb-2">
+            Step 1: Upload Data (Supports Large CSV Files)
+        </p>
+        <p class="text-sm text-gray-500 mb-4">
+            If you are using Excel, please **Save As > CSV (Comma delimited)** first. The app uses web workers for fast background processing.
+        </p>
+        <input type="file" id="csvFileInput" accept=".csv" onchange="handleFileChange(event)">
+        <div id="loading-message" class="text-blue-500 font-semibold mt-4 hidden">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Processing data and generating charts...
+        </div>
+        <div id="error-message" class="bg-red-100 text-red-700 p-3 rounded-lg mt-4 hidden font-medium"></div>
+    </div>
+
+    <div id="chart-output" class="hidden">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2 text-center">📈 Key Performance Indicators (KPIs)</h2>
+        
+        <div class="chart-grid">
+            <!-- 1. Month by Month Trend -->
+            <div class="chart-box">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Task Registration: Month Trend</h3>
+                <canvas id="monthlyTrendChart"></canvas>
+            </div>
+            
+            <!-- 2. Week by Week Trend -->
+            <div class="chart-box">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Task Registration: Weekly Trend</h3>
+                <canvas id="weeklyTrendChart"></canvas>
+            </div>
+
+            <!-- 6. Trends by status -->
+            <div class="chart-box">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Trends by Status</h3>
+                <canvas id="statusTrendsChart"></canvas>
+            </div>
+
+            <!-- 8. Overdue tasks -->
+            <div class="chart-box">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Overdue Tasks Check</h3>
+                <canvas id="overdueTasksChart"></canvas>
+            </div>
+
+             <!-- 7. Average completion time (Duration) -->
+            <div class="chart-box">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Avg Completion Time (Days)</h3>
+                <canvas id="avgCompletionTimeChart"></canvas>
+            </div>
+           
+            <!-- 10. Performance by site -->
+            <div class="chart-box">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Task Volume by Requestor Site</h3>
+                <canvas id="performanceBySiteChart"></canvas>
+            </div>
+
+            <!-- 9. Task types by person (Stacked) -->
+            <div class="chart-box col-span-1 md:col-span-2 xl:col-span-3">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Task Types by Person (Item Type)</h3>
+                <canvas id="taskTypesByPersonChart"></canvas>
+            </div>
+
+            <!-- 3. Top 10 Frequent Descriptions -->
+            <div class="chart-box col-span-1 md:col-span-1">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Top 10 Frequent Descriptions</h3>
+                <canvas id="topDescriptionsChart"></canvas>
+            </div>
+            
+            <!-- 4. Top 10 Frequent Templates -->
+            <div class="chart-box col-span-1 md:col-span-1">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Top 10 Frequent Templates</h3>
+                <canvas id="topTemplatesChart"></canvas>
+            </div>
+
+            <!-- 5. Top 10 Frequent To person -->
+            <div class="chart-box col-span-1 md:col-span-1">
+                <h3 class="text-xl font-semibold text-indigo-600 mb-4">Top 10 Frequent Assigned Persons</h3>
+                <canvas id="topToPersonChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Register the datalabels plugin globally
+    Chart.register(ChartDataLabels);
+
+    const STATUS_COL = 'Status (Service Today)';
+    let chartInstances = {};
+
+    // Fixed color palette for visual appeal (Tailwind-inspired)
+    const COLORS = [
+        '#4f46e5', '#f97316', '#10b981', '#ef4444', '#8b5cf6',
+        '#f59e0b', '#06b6d4', '#6b7280', '#ec4899', '#34d399'
+    ];
+
+    /**
+     * Common options for datalabels plugin.
+     */
+    const datalabelsOptions = {
+        color: '#fff',
+        font: { weight: 'bold', size: 10 },
+        formatter: (value) => value > 0 ? value : null, 
+        textShadowBlur: 2,
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        anchor: 'center',
+        align: 'center',
+    };
+
+    /**
+     * Reads and processes the uploaded file.
+     */
+    function handleFileChange(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        document.getElementById('chart-output').classList.add('hidden');
+        document.getElementById('error-message').classList.add('hidden');
+        document.getElementById('loading-message').classList.remove('hidden');
+
+        Papa.parse(file, {
+            header: true,
+            dynamicTyping: true, 
+            skipEmptyLines: true,
+            // START OF CHANGE: Enable web worker for better performance on large files
+            worker: true, 
+            // END OF CHANGE
+            complete: function(results) {
+                document.getElementById('loading-message').classList.add('hidden');
+                if (results.errors.length > 0) {
+                    return displayError('CSV Parsing Error: ' + results.errors[0].message);
+                }
+                processAndRenderCharts(results.data);
+            },
+            error: function(err) {
+                document.getElementById('loading-message').classList.add('hidden');
+                return displayError('An error occurred during file parsing: ' + err.message);
+            }
+        });
+    }
+    
+    /**
+     * Clears existing Chart.js instances.
+     */
+    function destroyExistingCharts() {
+        for (const id in chartInstances) {
+            if (chartInstances[id]) chartInstances[id].destroy();
+        }
+        chartInstances = {};
+    }
+
+    /**
+     * Main function to process data and call chart rendering functions.
+     */
+    function processAndRenderCharts(data) {
+        destroyExistingCharts();
+        
+        // 1. Clean Column Names (remove trailing spaces)
+        let processedData = data.map(row => {
+            let newRow = {};
+            for (let key in row) {
+                newRow[key.trim()] = row[key];
+            }
+            return newRow;
+        });
+
+        const requiredCols = ['Registered', 'Modified', 'Deadline', STATUS_COL, 'Description', 'Template', 'To person', 'Item type', 'Requestor Site'];
+        let df = processedData.filter(row => requiredCols.every(col => row[col] !== null && row[col] !== undefined));
+
+        if (df.length === 0) {
+            return displayError("No valid data rows found after checking for required columns (Registered, Modified, Deadline, Status, etc.).");
+        }
+
+        // 2. Date Conversion
+        const dateCols = ['Registered', 'Modified', 'Deadline'];
+        for (const col of dateCols) {
+            df.forEach(row => {
+                // Assuming DD/MM/YYYY format based on previous analysis
+                const parts = String(row[col]).split('/');
+                if (parts.length === 3) {
+                    row[col] = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                } else {
+                    row[col] = null; // Mark as invalid date
+                }
+            });
+            df = df.filter(row => row[col] instanceof Date && !isNaN(row[col]));
+        }
+
+        if (df.length === 0) {
+             return displayError("No tasks could be processed after date column conversion. Please ensure dates are in DD/MM/YYYY format.");
+        }
+        
+        // 3. Derived Columns
+        df.forEach(row => {
+            row['Month'] = row.Registered.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+            // Calculate week of the year
+            const date = row.Registered;
+            const jan1 = new Date(date.getFullYear(), 0, 1);
+            const weekNumber = Math.ceil((((date - jan1) / 86400000) + jan1.getDay() + 1) / 7);
+            row['Week'] = `W${weekNumber} (${row.Registered.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit'})})`;
+            
+            // Completion Duration (in days)
+            row['Duration'] = (row.Modified - row.Registered) / (1000 * 60 * 60 * 24);
+
+            // Overdue Check: Task is open OR Modified date is past the Deadline
+            const isOpen = !['Closed', 'Completed'].includes(row[STATUS_COL]);
+            const isModifiedAfterDeadline = row.Modified > row.Deadline;
+            row['Is_Overdue'] = (isOpen || isModifiedAfterDeadline) ? 'Overdue/Open' : 'On Time/Closed Early';
+        });
+
+
+        // --- Render All Charts ---
+        try {
+            // Trend Charts
+            renderMonthlyTrend(df);
+            renderWeeklyTrend(df);
+
+            // Top 10 Charts
+            renderTopNCategory(df, 'Description', 10, 'topDescriptionsChart', 'Top 10 Frequent Descriptions');
+            renderTopNCategory(df, 'Template', 10, 'topTemplatesChart', 'Top 10 Frequent Templates');
+            renderTopNCategory(df, 'To person', 10, 'topToPersonChart', 'Top 10 Frequent Assigned Persons');
+
+            // Analytical Charts
+            renderStatusTrends(df);
+            renderOverdueTasks(df);
+            renderAvgCompletionTime(df);
+            renderPerformanceBySite(df);
+            renderTaskTypesByPerson(df);
+            
+            document.getElementById('chart-output').classList.remove('hidden');
+
+        } catch (e) {
+            console.error("Chart Rendering Error:", e);
+            displayError('An error occurred while generating the charts. Check console for details.');
+        }
+    }
+
+    /**
+     * Renders a basic vertical bar chart with labels on top.
+     */
+    function renderVerticalBarChart(id, labels, data, title, colorScheme, options = {}) {
+        const ctx = document.getElementById(id).getContext('2d');
+        const defaultOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: { display: false, text: title },
+                tooltip: { mode: 'index', intersect: false },
+                datalabels: {
+                    ...datalabelsOptions,
+                    color: '#000',
+                    anchor: 'end',
+                    align: 'top',
+                    offset: 5,
+                    formatter: (value) => value > 0 ? value.toFixed(0) : null,
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: options.xLabel || '' } },
+                y: { title: { display: true, text: options.yLabel || 'Count' }, beginAtZero: true }
+            }
+        };
+
+        chartInstances[id] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: options.yLabel || 'Count',
+                    data: data,
+                    backgroundColor: colorScheme.slice(0, labels.length),
+                    borderColor: '#fff',
+                    borderWidth: 1
+                }]
+            },
+            options: { ...defaultOptions, ...options }
+        });
+    }
+
+    // --- Trend Charts ---
+
+    function renderMonthlyTrend(df) {
+        const monthlyData = df.reduce((acc, row) => {
+            acc[row.Month] = (acc[row.Month] || 0) + 1;
+            return acc;
+        }, {});
+        
+        const labels = Object.keys(monthlyData).sort();
+        const data = labels.map(key => monthlyData[key]);
+
+        renderVerticalBarChart('monthlyTrendChart', labels, data, 'Task Registration: Month Trend', COLORS, {
+            xLabel: 'Month',
+            yLabel: 'Total Tasks',
+        });
+    }
+
+    function renderWeeklyTrend(df) {
+        const weeklyData = df.reduce((acc, row) => {
+            acc[row.Week] = (acc[row.Week] || 0) + 1;
+            return acc;
+        }, {});
+        
+        // Custom sort for week strings (WXX (MM/DD))
+        const labels = Object.keys(weeklyData).sort((a, b) => {
+            const weekNumA = parseInt(a.substring(1, a.indexOf('(')));
+            const weekNumB = parseInt(b.substring(1, b.indexOf('(')));
+            return weekNumA - weekNumB;
+        });
+        const data = labels.map(key => weeklyData[key]);
+
+        renderVerticalBarChart('weeklyTrendChart', labels, data, 'Task Registration: Weekly Trend', COLORS, {
+            xLabel: 'Week Range',
+            yLabel: 'Total Tasks',
+        });
+    }
+
+    // --- Top N Charts (Horizontal) ---
+
+    function renderTopNCategory(df, colName, n, id, title) {
+        const counts = df.reduce((acc, row) => {
+            const key = row[colName] || 'Unassigned';
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+        }, {});
+        
+        const sortedEntries = Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, n);
+        const labels = sortedEntries.map(([key]) => key);
+        const data = sortedEntries.map(([, count]) => count);
+
+        const ctx = document.getElementById(id).getContext('2d');
+        chartInstances[id] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Frequency',
+                    data: data,
+                    backgroundColor: COLORS.slice(0, labels.length).map(color => color + 'b3'), // Add opacity
+                    borderColor: COLORS.slice(0, labels.length),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y', // Make it horizontal
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: false, text: title },
+                    tooltip: { mode: 'index', intersect: false },
+                    datalabels: {
+                        ...datalabelsOptions,
+                        color: '#000',
+                        anchor: 'end',
+                        align: 'right',
+                        offset: 5,
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Frequency' }, beginAtZero: true },
+                    y: { title: { display: true, text: colName } }
+                }
+            }
+        });
+    }
+
+    // --- Analytical Charts ---
+
+    function renderStatusTrends(df) {
+        const statusData = df.reduce((acc, row) => {
+            const status = row[STATUS_COL] || 'Unknown';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {});
+        
+        const labels = Object.keys(statusData).sort();
+        const data = labels.map(key => statusData[key]);
+
+        renderVerticalBarChart('statusTrendsChart', labels, data, 'Trends by Status', COLORS, {
+            xLabel: 'Status',
+            yLabel: 'Count',
+        });
+    }
+
+    function renderOverdueTasks(df) {
+        const overdueData = df.reduce((acc, row) => {
+            acc[row.Is_Overdue] = (acc[row.Is_Overdue] || 0) + 1;
+            return acc;
+        }, {});
+        
+        const labels = Object.keys(overdueData);
+        const data = labels.map(key => overdueData[key]);
+        const customColors = ['#ef4444', '#10b981']; // Red for Overdue, Green for On Time
+
+        renderVerticalBarChart('overdueTasksChart', labels, data, 'Overdue Tasks', customColors, {
+            xLabel: 'Overdue Status',
+            yLabel: 'Count',
+            plugins: {
+                 datalabels: {
+                    ...datalabelsOptions,
+                    color: '#fff',
+                    anchor: 'center',
+                    align: 'center',
+                    offset: 0,
+                 }
+            }
+        });
+    }
+
+    function renderAvgCompletionTime(df) {
+        // Filter for closed tasks with valid duration
+        const closedTasks = df.filter(row => row[STATUS_COL] === 'Closed' && row.Duration >= 0);
+        
+        const durationByPerson = closedTasks.reduce((acc, row) => {
+            const person = row['To person'] || 'Unassigned';
+            if (!acc[person]) acc[person] = { totalDuration: 0, count: 0 };
+            acc[person].totalDuration += row.Duration;
+            acc[person].count += 1;
+            return acc;
+        }, {});
+
+        const avgDurationData = Object.entries(durationByPerson)
+            .map(([person, { totalDuration, count }]) => ({ 
+                person, 
+                avgDuration: totalDuration / count 
+            }))
+            .sort((a, b) => b.avgDuration - a.avgDuration);
+
+        const labels = avgDurationData.map(d => d.person);
+        const data = avgDurationData.map(d => d.avgDuration);
+
+        renderVerticalBarChart('avgCompletionTimeChart', labels, data, 'Average Completion Time', COLORS, {
+            xLabel: 'Assigned Person',
+            yLabel: 'Avg Duration (Days)',
+            plugins: {
+                 datalabels: {
+                    ...datalabelsOptions,
+                    formatter: (value) => value > 0 ? value.toFixed(1) : null,
+                 }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Assigned Person' } },
+                y: { title: { display: true, text: 'Avg Duration (Days)' }, beginAtZero: true }
+            }
+        });
+    }
+
+    function renderPerformanceBySite(df) {
+        const siteData = df.reduce((acc, row) => {
+            const site = row['Requestor Site'] || 'Unknown Site';
+            acc[site] = (acc[site] || 0) + 1;
+            return acc;
+        }, {});
+        
+        const sortedEntries = Object.entries(siteData).sort(([, a], [, b]) => b - a);
+        const labels = sortedEntries.map(([key]) => key);
+        const data = sortedEntries.map(([, count]) => count);
+
+        renderVerticalBarChart('performanceBySiteChart', labels, data, 'Task Volume by Requestor Site', COLORS, {
+            xLabel: 'Requestor Site',
+            yLabel: 'Total Tasks',
+        });
+    }
+
+    function renderTaskTypesByPerson(df) {
+        // Group by person and item type
+        const groupedData = df.reduce((acc, row) => {
+            const person = row['To person'] || 'Unassigned';
+            const itemType = row['Item type'] || 'Other';
+            
+            if (!acc[person]) acc[person] = {};
+            acc[person][itemType] = (acc[person][itemType] || 0) + 1;
+            return acc;
+        }, {});
+
+        const allItemTypes = Array.from(new Set(df.map(row => row['Item type']).filter(Boolean)));
+        const labels = Object.keys(groupedData).sort();
+        
+        const datasets = allItemTypes.map((itemType, index) => {
+            return {
+                label: itemType,
+                data: labels.map(person => groupedData[person][itemType] || 0),
+                backgroundColor: COLORS[index % COLORS.length]
+            };
+        });
+
+        const ctx = document.getElementById('taskTypesByPersonChart').getContext('2d');
+        chartInstances['taskTypesByPersonChart'] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    title: { display: false },
+                    tooltip: { mode: 'index', intersect: false },
+                    datalabels: {
+                         ...datalabelsOptions,
+                         color: '#fff',
+                         display: (context) => context.dataset.data[context.dataIndex] > 0, // Only show for non-zero segments
+                         formatter: (value) => value > 0 ? value : null,
+                         anchor: 'center',
+                         align: 'center'
+                    }
+                },
+                scales: {
+                    x: { stacked: true, title: { display: true, text: 'Assigned Person' } },
+                    y: { stacked: true, title: { display: true, text: 'Total Tasks' }, beginAtZero: true }
+                }
+            }
+        });
+    }
+
+    function displayError(message) {
+        const errorDiv = document.getElementById('error-message');
+        errorDiv.textContent = 'Error: ' + message;
+        errorDiv.classList.remove('hidden');
+    }
+</script>
+
+</body>
+</html>
